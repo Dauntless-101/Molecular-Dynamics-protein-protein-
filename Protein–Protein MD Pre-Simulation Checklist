@@ -1,0 +1,70 @@
+# Protein–Protein Molecular Dynamics (MD) Workflow
+
+This is a comprehensive **pre-MD checklist and workflow** for protein–protein complexes using **GROMACS** and **CHARMM36-JUL2022**. It covers preparation, solvation, energy minimization, equilibration, production MD, and analysis.
+
+---
+
+## 0. Prepare the Complex
+
+### Check PDB Chains
+Open your structure in **PyMOL**:
+
+```python
+fetch 1XYZ, type=pdb  # Replace with your PDB or local file
+iterate all, print(chain, resn, resi)
+
+1. Fix Missing Residues and Atoms
+# Instructions:
+- Use PyMOL, ModRefiner, or CHARMM-GUI to model missing loops.
+- Check for missing side chains and rebuild if necessary.
+- Remove crystallographic waters or ions not relevant for simulation.
+
+2. Protonation States & Histidines
+# Instructions (non-code)
+- Protonation is critical at the protein–protein interface.
+- Assign histidines appropriately:
+  HIE = epsilon protonated
+  HID = delta protonated
+  HIP = double protonated (charged)
+- Tools: pdb2pqr for pH-dependent protonation or visual check in PyMOL.
+# Example: Highlight interface histidines in PyMOL
+```python
+select his_interface, resn HIS and chain A within 5 of chain B
+show sticks, his_interface
+
+3. Check Structural Integrity
+```python
+# View structure and chains
+show cartoon
+color red, chain A
+color blue, chain B
+
+# Measure key distances at the interface
+distance resi 45 and chain A, resi 112 and chain B
+
+4. Optional Pre-Processing Fixes
+# Example: Define disulfide bond in PyMOL if missing
+bond /A/CYS45/SG, /B/CYS78/SG
+# Instructions (non-code)
+- Add missing hydrogens if your PDB does not include them.
+- Check for alternate conformations and pick the biologically relevant one.
+- Remove unwanted heteroatoms (e.g., buffer ions or crystallization agents) before topology generation.
+
+5. Notes for GROMACS Compatibility
+# Instructions (non-code)
+- Ensure chain IDs are unique.
+- Verify residue numbering is sequential for each chain.
+- Keep only protein residues unless a ligand or cofactor is biologically relevant.
+- Save your cleaned PDB as 'complex_fixed.pdb' for input to pdb2gmx.
+
+Pre-GROMACS Checklist
+- Chains verified and merged correctly
+- Missing residues or side chains modeled
+- Protonation states assigned (especially interface His)
+- Crystallographic water and irrelevant ions removed
+- Disulfides checked and assigned
+- Clashes or steric overlaps resolved
+- Key interface distances inspected
+- Final PDB saved as 'complex_fixed.pdb'
+
+After this, the next step is to generate the topology using gmx pdb2gmx.
