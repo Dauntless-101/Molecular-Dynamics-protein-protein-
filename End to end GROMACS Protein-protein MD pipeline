@@ -1,6 +1,6 @@
-1. Recommended project directory structure
+#Before starting I always recommend a project directory structure (to know where you are and where your files are and make them sorted and easy to find)
 
-Create a clean structure before running anything.
+#You must create a clean structure before running anything.
 
 project_MD/
 │
@@ -22,8 +22,12 @@ project_MD/
 │
 └── analysis/
 
+#I used the following for an HPC structure:
+
+$mkdir -p project_MD/{input,mdp,topology,equilibration,production,analysis/{rmsd,rmsf,contacts,distances}}
+
 ########################################
-# FUTURE PROOF GROMACS MD PIPELINE
+# GROMACS MD PIPELINE
 ########################################
 
 # Define GROMACS executable (future proof)
@@ -168,14 +172,153 @@ $GMX energy -f $EQUIL/npt.edr -o $ANALYSIS/pressure.xvg
 $GMX energy -f $EQUIL/npt.edr -o $ANALYSIS/density.xvg
 $GMX energy -f $EQUIL/npt.edr -o $ANALYSIS/box.xvg
 
+
+# Congratulations you passed the hard part now to the analysis
+
 ########################################
-# 11. Fix PBC and center trajectory
+# POST-MD ANALYSIS PIPELINE
+########################################
+
+export GMX=gmx
+
+PROD=production
+ANALYSIS=analysis
+
+mkdir -p $ANALYSIS/{prep,gyration,hbonds,clustering,interface,dccm,fel}
+
+########################################
+# 1. TRAJECTORY CLEANING (remove PBC)
 ########################################
 
 echo "Protein System" | $GMX trjconv \
 -s $PROD/md.tpr \
 -f $PROD/md.xtc \
--o $ANALYSIS/md_centered.xtc \
+-o $ANALYSIS/prep/md_center.xtc \
 -pbc mol \
 -center
 
+echo "Protein System" | $GMX trjconv \
+-s $PROD/md.tpr \
+-f $ANALYSIS/prep/md_center.xtc \
+-o $ANALYSIS/prep/md_noPBC.xtc \
+-pbc nojump
+
+########################################
+# 2. RMSD (global structural stability)
+########################################
+
+echo "Protein" | $GMX rms \
+-s $PROD/md.tpr \
+-f $ANALYSIS/prep/md_noPBC.xtc \
+-o $ANALYSIS/rmsd/rmsd_complex.xvg \
+-tu ns
+
+########################################
+# 3. RMSF (residue flexibility)
+########################################
+
+echo "Protein" | $GMX rmsf \
+-s $PROD/md.tpr \
+-f $ANALYSIS/prep/md_noPBC.xtc \
+-o $ANALYSIS/rmsf/rmsf_residues.xvg \
+-res
+
+########################################
+# 4. RADIUS OF GYRATION
+########################################
+
+echo "Protein" | $GMX gyrate \
+-s $PROD/md.tpr \
+-f $ANALYSIS/prep/md_noPBC.xtc \
+-o $ANALYSIS/gyration/gyration.xvg
+
+########################################
+# 5. HYDROGEN BOND ANALYSIS
+########################################
+
+echo "Protein Protein" | $GMX hbond \
+-s $PROD/md.tpr \
+-f $ANALYSIS/prep/md_noPBC.xtc \
+-num $ANALYSIS/hbonds/hbond_number.xvg \
+-dist $ANALYSIS/hbonds/hbond_distance.xvg
+
+########################################
+# 6. CONTACTS BETWEEN PROTEINS
+########################################
+
+echo "Protein Protein" | $GMX mindist \
+-s $PROD/md.tpr \
+-f $ANALYSIS/prep/md_noPBC.xtc \
+-on $ANALYSIS/contacts/interface_contacts.xvg \
+-od $ANALYSIS/distances/min_distance.xvg \
+-group
+
+########################################
+# 7. STRUCTURAL CLUSTERING (MD conformations)
+########################################
+
+echo "Protein" | $GMX cluster \
+-s $PROD/md.tpr \
+-f $ANALYSIS/prep/md_noPBC.xtc \
+-method gromos \
+-cutoff 0.2 \
+-o $ANALYSIS/clustering/clusters.xpm \
+-g $ANALYSIS/clustering/cluster.log \
+-cl $ANALYSIS/clustering/cluster_structures.pdb
+
+########################################
+# 8. CREATE INDEX FILE FOR CHAINS
+########################################
+
+$GMX make_ndx \
+-f $PROD/md.tpr \
+-o $ANALYSIS/interface/index.ndx << EOF
+chain A
+chain B
+q
+EOF
+
+########################################
+# 9. INTERFACE RMSD
+########################################
+
+echo "Protein" | $GMX rms \
+-s $PROD/md.tpr \
+-f $ANALYSIS/prep/md_noPBC.xtc \
+-n $ANALYSIS/interface/index.ndx \
+-o $ANALYSIS/interface/interface_rmsd.xvg
+
+########################################
+# 10. DYNAMIC CROSS CORRELATION MATRIX
+########################################
+
+echo "Protein" | $GMX covar \
+-s $PROD/md.tpr \
+-f $ANALYSIS/prep/md_noPBC.xtc \
+-o $ANALYSIS/dccm/eigenvalues.xvg \
+-v $ANALYSIS/dccm/eigenvectors.trr
+
+echo "Protein" | $GMX anaeig \
+-v $ANALYSIS/dccm/eigenvectors.trr \
+-first 1 \
+-last 2 \
+-2d $ANALYSIS/dccm/dccm_matrix.xpm
+
+########################################
+# 11. FREE ENERGY LANDSCAPE
+########################################
+
+echo "Protein" | $GMX sham \
+-f $ANALYSIS/rmsd/rmsd_complex.xvg \
+-ls $ANALYSIS/fel/free_energy_landscape.xpm \
+-lsh $ANALYSIS/fel/free_energy_surface.xpm
+
+########################################
+# 12. EXTRACT REPRESENTATIVE STRUCTURES
+########################################
+
+echo "Protein System" | $GMX trjconv \
+-s $PROD/md.tpr \
+-f $ANALYSIS/prep/md_noPBC.xtc \
+-dt 1000 \
+-o $ANALYSIS/prep/sample_frames.pdb
