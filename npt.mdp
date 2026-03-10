@@ -1,0 +1,63 @@
+title                   = NPT equilibration (protein–protein)
+
+; Run control
+integrator              = md
+dt                      = 0.002
+nsteps                  = 50000      ; 100 ps
+continuation            = yes
+
+; Output control
+nstxout                 = 0
+nstvout                 = 0
+nstenergy               = 1000
+nstlog                  = 1000
+nstxout-compressed      = 1000
+compressed-x-grps       = System
+
+; Neighbor searching
+cutoff-scheme           = Verlet
+nstlist                 = 20
+rlist                   = 1.2
+
+; Electrostatics
+coulombtype             = PME
+rcoulomb                = 1.2
+pme_order               = 4
+fourierspacing          = 0.12
+
+; Van der Waals
+vdwtype                 = Cut-off
+vdw-modifier            = Force-switch
+rvdw-switch             = 1.0
+rvdw                    = 1.2
+DispCorr                = EnerPres
+
+; Temperature coupling
+tcoupl                  = V-rescale
+tc-grps                 = Protein non-Protein
+tau_t                   = 0.1   0.1
+ref_t                   = 300   300
+
+; Pressure coupling
+pcoupl                  = Berendsen
+pcoupltype              = isotropic
+tau_p                   = 2.0
+ref_p                   = 1.0
+compressibility         = 4.5e-5
+
+; Constraints (CRITICAL)
+constraints             = h-bonds
+constraint_algorithm    = lincs
+lincs_iter              = 1
+lincs_order             = 4
+
+; Center of mass motion removal
+comm-mode               = Linear
+comm-grps               = Protein non-Protein
+
+; Velocity generation
+gen_vel                 = no
+
+; Position restraints
+define                  = -DPOSRES
+refcoord_scaling = com
