@@ -1,0 +1,181 @@
+1. Recommended project directory structure
+
+Create a clean structure before running anything.
+
+project_MD/
+│
+├── input/
+│   └── complex.pdb
+│
+├── mdp/
+│   ├── ions.mdp
+│   ├── em.mdp
+│   ├── nvt.mdp
+│   ├── npt.mdp
+│   └── md.mdp
+│
+├── topology/
+│
+├── equilibration/
+│
+├── production/
+│
+└── analysis/
+
+########################################
+# FUTURE PROOF GROMACS MD PIPELINE
+########################################
+
+# Define GROMACS executable (future proof)
+export GMX=gmx
+
+# Define folders
+INPUT=input
+MDP=mdp
+TOP=topology
+EQUIL=equilibration
+PROD=production
+ANALYSIS=analysis
+
+########################################
+# 1. Generate topology
+########################################
+
+$GMX pdb2gmx \
+-f $INPUT/complex.pdb \
+-o $TOP/processed.gro \
+-p $TOP/topol.top \
+-ff charmm36-jul2022 \
+-water tip3p \
+-ignh
+
+########################################
+# 2. Define simulation box
+########################################
+
+$GMX editconf \
+-f $TOP/processed.gro \
+-o $TOP/boxed.gro \
+-c \
+-d 1.2 \
+-bt dodecahedron
+
+########################################
+# 3. Solvate system
+########################################
+
+$GMX solvate \
+-cp $TOP/boxed.gro \
+-cs spc216.gro \
+-o $TOP/solv.gro \
+-p $TOP/topol.top
+
+########################################
+# 4. Prepare ions
+########################################
+
+$GMX grompp \
+-f $MDP/ions.mdp \
+-c $TOP/solv.gro \
+-p $TOP/topol.top \
+-o $TOP/ions.tpr \
+
+##if it fails and it's only warnings try this: 
+$GMX grompp \
+-f $MDP/ions.mdp \
+-c $TOP/solv.gro \
+-p $TOP/topol.top \
+-o $TOP/ions.tpr \
+-maxwarn 1
+
+#if it still fails look through your errors, if the maxwarn works neutralise the system with step 5
+########################################
+# 5. Add ions
+########################################
+
+echo "SOL" | $GMX genion \
+-s $TOP/ions.tpr \
+-o $TOP/solv_ions.gro \
+-p $TOP/topol.top \
+-neutral
+
+########################################
+# 6. Energy minimization
+########################################
+
+$GMX grompp \
+-f $MDP/em.mdp \
+-c $TOP/solv_ions.gro \
+-p $TOP/topol.top \
+-o $EQUIL/em.tpr
+
+$GMX mdrun \
+-deffnm $EQUIL/em \
+-v
+
+########################################
+# 7. NVT equilibration
+########################################
+
+$GMX grompp \
+-f $MDP/nvt.mdp \
+-c $EQUIL/em.gro \
+-r $EQUIL/em.gro \
+-p $TOP/topol.top \
+-o $EQUIL/nvt.tpr
+
+$GMX mdrun \
+-deffnm $EQUIL/nvt \
+-v
+
+########################################
+# 8. NPT equilibration
+########################################
+
+$GMX grompp \
+-f $MDP/npt.mdp \
+-c $EQUIL/nvt.gro \
+-r $EQUIL/nvt.gro \
+-t $EQUIL/nvt.cpt \
+-p $TOP/topol.top \
+-o $EQUIL/npt.tpr
+
+$GMX mdrun \
+-deffnm $EQUIL/npt \
+-v
+
+########################################
+# 9. Production MD
+########################################
+
+$GMX grompp \
+-f $MDP/md.mdp \
+-c $EQUIL/npt.gro \
+-t $EQUIL/npt.cpt \
+-p $TOP/topol.top \
+-o $PROD/md.tpr
+
+$GMX mdrun \
+-deffnm $PROD/md \
+-v
+
+########################################
+# 10. Basic Equilibration Checks
+########################################
+
+$GMX energy -f $EQUIL/npt.edr -o $ANALYSIS/temperature.xvg
+$GMX energy -f $EQUIL/npt.edr -o $ANALYSIS/pressure.xvg
+$GMX energy -f $EQUIL/npt.edr -o $ANALYSIS/density.xvg
+$GMX energy -f $EQUIL/npt.edr -o $ANALYSIS/box.xvg
+
+########################################
+# 11. Fix PBC and center trajectory
+########################################
+
+echo "Protein System" | $GMX trjconv \
+-s $PROD/md.tpr \
+-f $PROD/md.xtc \
+-o $ANALYSIS/md_centered.xtc \
+-pbc mol \
+-center
+
